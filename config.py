@@ -181,7 +181,8 @@ class Config():
         self.lambda_adv_d = 3. * (self.lambda_adv_g > 0)
 
         # PATH settings - inactive
-        self.weights_root_dir = os.path.join(self.sys_home_dir, 'weights/cv')
+        # self.weights_root_dir = os.path.join(self.sys_home_dir, 'weights/cv')
+        self.weights_root_dir = '/input/'
         self.weights = {
             'pvt_v2_b2': os.path.join(self.weights_root_dir, 'pvt_v2_b2.pth'),
             'pvt_v2_b5': os.path.join(self.weights_root_dir, ['pvt_v2_b5.pth', 'pvt_v2_b5_22k.pth'][0]),
