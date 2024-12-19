@@ -87,7 +87,7 @@ def bytes2im(s):
 @torch.no_grad()
 def evaluate_evalset_by_cat(model, fl_fasttest=False, long=2048):
 
-    lancepath = os.path.join('/input/bgrm-data/testcat.lance')
+    lancepath = os.path.join('/input/testcat.lance')
     dfcat = lance.dataset(lancepath)
     dfcat = dfcat.to_table().to_pandas()
 

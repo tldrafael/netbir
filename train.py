@@ -105,7 +105,7 @@ def prepare_dataloader(dataset: torch.utils.data.Dataset, batch_size: int, to_be
 
 
 def my_init_data_loaders(to_be_distributed):
-    inputdir = '/input/bgrm-data/'
+    inputdir = '/input/'
     dataname = '2024_1101_sodlist_curated_756px_nobadhaginghands+notransparency.lance'
     train_fpath = os.path.join(inputdir, dataname)
     train_ds = MyLanceDataset(train_fpath, long=config.size[0])
