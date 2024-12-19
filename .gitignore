@@ -147,3 +147,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+*.swp
+*.pt
+*.zip
+tags
+datasets/

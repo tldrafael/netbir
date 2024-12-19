@@ -42,19 +42,31 @@ def generate_smoothed_gt(gts):
 
 
 class Logger():
-    def __init__(self, path="log.txt"):
+    def __init__(self, path="log.txt", fl_main=True):
         self.logger = logging.getLogger('BiRefNet')
-        self.file_handler = logging.FileHandler(path, "w")
+
+        self.file_handler = logging.FileHandler(path, "a")
         self.stdout_handler = logging.StreamHandler()
-        self.stdout_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
-        self.file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+
+        self.formatter = logging.Formatter(
+            '%(asctime)s, %(levelname)s %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+
+        self.file_handler.setFormatter(self.formatter)
         self.logger.addHandler(self.file_handler)
+
+        self.stdout_handler.setFormatter(self.formatter)
         self.logger.addHandler(self.stdout_handler)
+
         self.logger.setLevel(logging.INFO)
         self.logger.propagate = False
+
+        self.fl_main = fl_main
     
     def info(self, txt):
-        self.logger.info(txt)
+        if self.fl_main:
+            self.logger.log(logging.INFO, txt)
     
     def close(self):
         self.file_handler.close()
