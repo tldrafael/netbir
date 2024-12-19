@@ -7,10 +7,14 @@ class Config():
         # PATH settings
         # Make up your file system as: SYS_HOME_DIR/codes/dis/BiRefNet, SYS_HOME_DIR/datasets/dis/xx, SYS_HOME_DIR/weights/xx
         self.sys_home_dir = [os.path.expanduser('~'), '/mnt/data'][0]   # Default, custom
-        self.data_root_dir = os.path.join(self.sys_home_dir, 'datasets/dis')
+        self.sys_home_dir = '/home/rafael/workspace/BiRefNet/'
+        self.data_root_dir = os.path.join(self.sys_home_dir, 'datasets/dis/')
 
         # TASK settings
         self.task = ['DIS5K', 'COD', 'HRSOD', 'General', 'General-2K', 'Matting'][0]
+        self.task = 'General'
+        self.task = 'PxCut'
+
         self.testsets = {
             # Benchmarks
             'DIS5K': ','.join(['DIS-VD', 'DIS-TE1', 'DIS-TE2', 'DIS-TE3', 'DIS-TE4']),
@@ -20,6 +24,7 @@ class Config():
             'General': ','.join(['DIS-VD', 'TE-P3M-500-NP']),
             'General-2K': ','.join(['DIS-VD', 'TE-P3M-500-NP']),
             'Matting': ','.join(['TE-P3M-500-NP', 'TE-AM-2k']),
+            'PxCut': ','.join(['evalset-multicat-v0.2-long2048',]),
         }[self.task]
         datasets_all = '+'.join([ds for ds in (os.listdir(os.path.join(self.data_root_dir, self.task)) if os.path.isdir(os.path.join(self.data_root_dir, self.task)) else []) if ds not in self.testsets.split(',')])
         self.training_set = {
@@ -29,6 +34,7 @@ class Config():
             'General': datasets_all,
             'General-2K': datasets_all,
             'Matting': datasets_all,
+            'PxCut': datasets_all,
         }[self.task]
         self.prompt4loc = ['dense', 'sparse'][0]
 
@@ -53,7 +59,8 @@ class Config():
         self.dec_blk = ['BasicDecBlk', 'ResBlk'][0]
 
         # TRAINING settings
-        self.batch_size = 4
+        self.batch_size = 2
+        # self.batch_size = 1
         self.finetune_last_epochs = [
             0,
             {
@@ -63,10 +70,13 @@ class Config():
                 'General': -40,
                 'General-2K': -20,
                 'Matting': -20,
+                'PxCut': -40,
             }[self.task]
         ][1]    # choose 0 to skip
         self.lr = (1e-4 if 'DIS5K' in self.task else 1e-5) * math.sqrt(self.batch_size / 4)     # DIS needs high lr to converge faster. Adapt the lr linearly
-        self.size = (1024, 1024) if self.task not in ['General-2K'] else (2560, 1440)   # wid, hei
+        # self.size = (1024, 1024) if self.task not in ['General-2K'] else (2560, 1440)   # wid, hei
+        # self.size = (756, 756)
+        self.size = (256, 256)
         self.num_workers = max(4, self.batch_size)          # will be decrease to min(it, batch_size) at the initialization of the data_loader
 
         # Backbone settings
@@ -123,6 +133,19 @@ class Config():
                 'structure': 5 * 0,
             }
         elif self.task in ['General', 'General-2K']:
+            self.lambdas_pix_last = {
+                'bce': 30 * 1,
+                'iou': 0.5 * 1,
+                'iou_patch': 0.5 * 0,
+                'mae': 100 * 1,
+                'mse': 30 * 0,
+                'triplet': 3 * 0,
+                'reg': 100 * 0,
+                'ssim': 10 * 1,
+                'cnt': 5 * 0,
+                'structure': 5 * 0,
+            }
+        elif self.task in ['PxCut']:
             self.lambdas_pix_last = {
                 'bce': 30 * 1,
                 'iou': 0.5 * 1,

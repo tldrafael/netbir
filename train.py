@@ -16,6 +16,22 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
+from torch.utils.tensorboard import SummaryWriter
+from append import evaluate_evalset_by_cat, evaluate_testglass, MyLanceDataset
+from tqdm import tqdm
+import torch.distributed as dist
+
+
+fl_fasttest = False
+fl_fasttest = True
+
+main_gpu = 0
+n_gpus = torch.cuda.device_count()
+# rank = dist.get_rank()
+# gpu_id = rank % n_gpus
+gpu_id = torch.cuda.current_device()
+fl_main = gpu_id == main_gpu
+
 
 parser = argparse.ArgumentParser(description='')
 parser.add_argument('--resume', default=None, type=str, help='path to latest checkpoint')
@@ -49,10 +65,11 @@ else:
 
 epoch_st = 1
 # make dir for ckpt
+args.ckpt_dir = '/output/'
 os.makedirs(args.ckpt_dir, exist_ok=True)
 
 # Init log file
-logger = Logger(os.path.join(args.ckpt_dir, "log.txt"))
+logger = Logger(os.path.join(args.ckpt_dir, "log.txt"), fl_main=fl_main)
 logger_loss_idx = 1
 
 # log model and optimizer params
@@ -60,9 +77,13 @@ logger_loss_idx = 1
 if args.use_accelerate and accelerator.mixed_precision != 'no':
     config.compile = False
 logger.info("datasets: load_all={}, compile={}.".format(config.load_all, config.compile))
-logger.info("Other hyperparameters:"); logger.info(args)
+logger.info("Other hyperparameters:")
+logger.info(args)
+logger.info(f'batch size: {config.batch_size}')
 print('batch size:', config.batch_size)
 
+
+writer = SummaryWriter(log_dir=os.path.join(args.ckpt_dir, 'logs'))
 
 if os.path.exists(os.path.join(config.data_root_dir, config.task, args.testsets.strip('+').split('+')[0])):
     args.testsets = args.testsets.strip('+').split('+')
@@ -81,6 +102,20 @@ def prepare_dataloader(dataset: torch.utils.data.Dataset, batch_size: int, to_be
             dataset=dataset, batch_size=batch_size, num_workers=min(config.num_workers, batch_size, 0), pin_memory=True,
             shuffle=is_train, drop_last=True
         )
+
+
+def my_init_data_loaders(to_be_distributed):
+    inputdir = '/input/bgrm-data/'
+    dataname = '2024_1101_sodlist_curated_756px_nobadhaginghands+notransparency.lance'
+    train_fpath = os.path.join(inputdir, dataname)
+    train_ds = MyLanceDataset(train_fpath, long=config.size[0])
+
+    train_loader = prepare_dataloader(
+        train_ds,
+        config.batch_size, to_be_distributed=to_be_distributed, is_train=True
+    )
+    test_loaders = {}
+    return train_loader, test_loaders
 
 
 def init_data_loaders(to_be_distributed):
@@ -106,6 +141,10 @@ def init_models_optimizers(epochs, to_be_distributed):
         model = BiRefNet(bb_pretrained=True and not os.path.isfile(str(args.resume)))
     elif config.model == 'BiRefNetC2F':
         model = BiRefNetC2F(bb_pretrained=True and not os.path.isfile(str(args.resume)))
+
+    # args.resume = '/home/rafael/workspace/BiRefNet/BiRefNet-general-epoch_244.pth'
+    # args.resume = '/home/rafael/workspace/BiRefNet/ckpt/my-sublist50k-UHR-tuneiouloss/last.pth'
+    # ep_resume = 43
     if args.resume:
         if os.path.isfile(args.resume):
             logger.info("=> loading checkpoint '{}'".format(args.resume))
@@ -113,7 +152,8 @@ def init_models_optimizers(epochs, to_be_distributed):
             state_dict = check_state_dict(state_dict)
             model.load_state_dict(state_dict)
             global epoch_st
-            epoch_st = int(args.resume.rstrip('.pth').split('epoch_')[-1]) + 1
+            # epoch_st = int(args.resume.rstrip('.pth').split('epoch_')[-1]) + 1
+            epoch_st = ep_resume + 1
         else:
             logger.info("=> no checkpoint found at '{}'".format(args.resume))
     if not args.use_accelerate:
@@ -122,7 +162,7 @@ def init_models_optimizers(epochs, to_be_distributed):
             model = DDP(model, device_ids=[device])
         else:
             model = model.to(device)
-    if config.compile:
+    if config.compile and not fl_fasttest:
         model = torch.compile(model, mode=['default', 'reduce-overhead', 'max-autotune'][0])
     if config.precisionHigh:
         torch.set_float32_matmul_precision('high')
@@ -160,12 +200,15 @@ class Trainer:
         # Setting Losses
         self.pix_loss = PixLoss()
         self.cls_loss = ClsLoss()
-        
+
         # Others
         self.loss_log = AverageMeter()
         if config.lambda_adv_g:
             self.optimizer_d, self.lr_scheduler_d, self.disc, self.adv_criterion = self._load_adv_components()
             self.disc_update_for_odd = 0
+
+        self.sadlog_best = 9999
+        self.sad_glass = 9999
 
     def _load_adv_components(self):
         # AIL
@@ -199,6 +242,7 @@ class Trainer:
             inputs = batch[0].to(device)
             gts = batch[1].to(device)
             class_labels = batch[2].to(device)
+
         scaled_preds, class_preds_lst = self.model(inputs)
         if config.out_ref:
             (outs_gdt_pred, outs_gdt_label), scaled_preds = scaled_preds
@@ -251,6 +295,7 @@ class Trainer:
         global logger_loss_idx
         self.model.train()
         self.loss_dict = {}
+        # if True:
         if epoch > args.epochs + config.finetune_last_epochs:
             if config.task == 'Matting':
                 self.pix_loss.lambdas_pix_last['mae'] *= 1
@@ -262,17 +307,57 @@ class Trainer:
                 self.pix_loss.lambdas_pix_last['iou'] *= 0.5
                 self.pix_loss.lambdas_pix_last['mae'] *= 0.9
 
-        for batch_idx, batch in enumerate(self.train_loader):
+        gpu_id = torch.distributed.get_rank() if to_be_distributed else 0
+        pbar_trainloader = tqdm(
+            self.train_loader, desc=f"ep {epoch}", disable=gpu_id != 0)
+
+        # for batch_idx, batch in enumerate(self.train_loader):
+        for batch_idx, batch in enumerate(pbar_trainloader):
             self._train_batch(batch)
             # Logger
-            if batch_idx % 20 == 0:
-                info_progress = 'Epoch[{0}/{1}] Iter[{2}/{3}].'.format(epoch, args.epochs, batch_idx, len(self.train_loader))
-                info_loss = 'Training Losses'
+            if batch_idx % 100 == 0:
+                #info_progress = 'Epoch[{0}/{1}] Iter[{2}/{3}].'.format(epoch, args.epochs, batch_idx, len(self.train_loader))
+                #info_loss = 'Training Losses'
+                info_loss = ''
                 for loss_name, loss_value in self.loss_dict.items():
                     info_loss += ', {}: {:.3f}'.format(loss_name, loss_value)
-                logger.info(' '.join((info_progress, info_loss)))
+                #logger.info(' '.join((info_progress, info_loss)))
+
+                pbar_trainloader.set_description(info_loss)
+
+                if fl_fasttest:
+                    break
+
         info_loss = '@==Final== Epoch[{0}/{1}]  Training Loss: {loss.avg:.3f}  '.format(epoch, args.epochs, loss=self.loss_log)
         logger.info(info_loss)
+        if gpu_id == main_gpu:
+            writer.add_scalars('raw_objective', {'train': self.loss_log.avg}, epoch)
+
+        self.model.eval()
+        sadlog = evaluate_evalset_by_cat(self.model, fl_fasttest=fl_fasttest, long=config.size[0])
+        logger.info('Epoch[{0}/{1}]  sadlog: {sadlog:.2f}'.format(epoch, args.epochs, sadlog=sadlog))
+        if gpu_id == main_gpu:
+            writer.add_scalars('sad-log', {'testcat': sadlog}, epoch)
+
+        sadglass = evaluate_testglass(self.model, fl_fasttest=fl_fasttest)
+        logger.info('Epoch[{0}/{1}]  sad-glass3: {sadglass:.2f}'.format(epoch, args.epochs, sadglass=sadglass))
+        if gpu_id == main_gpu:
+            writer.add_scalars('sad', {'test-glass-3': sadglass}, epoch)
+
+        if sadlog < self.sadlog_best:
+            state = self.model.module.state_dict() if to_be_distributed or args.use_accelerate else self.model.state_dict(),
+            modelpath = os.path.join(args.ckpt_dir, 'sadlog_best.pth'.format(epoch))
+            torch.save(state, modelpath)
+            logger.info('Model saved at {}'.format(modelpath))
+
+        if sadglass < self.sad_glass:
+            state = self.model.module.state_dict() if to_be_distributed or args.use_accelerate else self.model.state_dict(),
+            modelpath = os.path.join(args.ckpt_dir, 'sadglass_best.pth'.format(epoch))
+            torch.save(state, modelpath)
+            logger.info('Model saved at {}'.format(modelpath))
+
+        self.model.train()
+
 
         self.lr_scheduler.step()
         if config.lambda_adv_g:
@@ -283,7 +368,8 @@ class Trainer:
 def main():
 
     trainer = Trainer(
-        data_loaders=init_data_loaders(to_be_distributed),
+        data_loaders=my_init_data_loaders(to_be_distributed),
+        # data_loaders=init_data_loaders(to_be_distributed),
         model_opt_lrsch=init_models_optimizers(args.epochs, to_be_distributed)
     )
 
@@ -291,11 +377,16 @@ def main():
         train_loss = trainer.train_epoch(epoch)
         # Save checkpoint
         # DDP
-        if epoch >= args.epochs - config.save_last and epoch % config.save_step == 0:
+        # if epoch >= args.epochs - config.save_last and epoch % config.save_step == 0:
+        if True:
+            modelpath = os.path.join(args.ckpt_dir, 'last.pth'.format(epoch))
             torch.save(
                 trainer.model.module.state_dict() if to_be_distributed or args.use_accelerate else trainer.model.state_dict(),
-                os.path.join(args.ckpt_dir, 'epoch_{}.pth'.format(epoch))
+                # os.path.join(args.ckpt_dir, 'epoch_{}.pth'.format(epoch))
+                modelpath
             )
+            logger.info('Model saved at {}'.format(modelpath))
+
     if to_be_distributed:
         destroy_process_group()
 

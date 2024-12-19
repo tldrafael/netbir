@@ -10,6 +10,7 @@ case "${task}" in
     'General') epochs=250 && val_last=50 && step=2 ;;
     'General-2K') epochs=250 && val_last=30 && step=2 ;;
     'Matting') epochs=100 && val_last=30 && step=2 ;;
+    'PxCut') epochs=250 && val_last=30 && step=2 ;;
 esac
 testsets=NO     # Non-existing folder to skip.
 # testsets=TE-COD10K   # for COD
@@ -19,6 +20,7 @@ devices=$2
 nproc_per_node=$(echo ${devices%%,} | grep -o "," | wc -l)
 
 to_be_distributed=`echo ${nproc_per_node} | awk '{if($e > 0) print "True"; else print "False";}'`
+# to_be_distributed="True"
 
 echo Training started at $(date)
 if [ ${to_be_distributed} == "True" ]
