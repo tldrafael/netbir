@@ -1,7 +1,7 @@
 torch
 torchvision
 numpy<2
-opencv-python
+opencv-python-headless
 timm
 scipy
 scikit-image
