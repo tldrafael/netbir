@@ -59,7 +59,7 @@ class Config():
         self.dec_blk = ['BasicDecBlk', 'ResBlk'][0]
 
         # TRAINING settings
-        self.batch_size = 2
+        self.batch_size = 6
         # self.batch_size = 1
         self.finetune_last_epochs = [
             0,
@@ -75,8 +75,8 @@ class Config():
         ][1]    # choose 0 to skip
         self.lr = (1e-4 if 'DIS5K' in self.task else 1e-5) * math.sqrt(self.batch_size / 4)     # DIS needs high lr to converge faster. Adapt the lr linearly
         # self.size = (1024, 1024) if self.task not in ['General-2K'] else (2560, 1440)   # wid, hei
-        # self.size = (756, 756)
-        self.size = (256, 256)
+        self.size = (756, 756)
+        # self.size = (256, 256)
         self.num_workers = max(4, self.batch_size)          # will be decrease to min(it, batch_size) at the initialization of the data_loader
 
         # Backbone settings
