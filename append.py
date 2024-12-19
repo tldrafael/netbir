@@ -1,3 +1,4 @@
+import pandas as pd
 import torch
 import torchvision.transforms as T
 import numpy as np
@@ -8,6 +9,9 @@ from torch.utils.data import Dataset
 import lance
 import random
 import os
+
+flexai = False
+flexai = True
 
 
 def get_newshape(oldh, oldw, long_length=1024):
@@ -86,12 +90,14 @@ def bytes2im(s):
 
 @torch.no_grad()
 def evaluate_evalset_by_cat(model, fl_fasttest=False, long=2048):
-    lancepath = os.path.join('/input/testcat.lance')
-    dfcat = lance.dataset(lancepath)
-    dfcat = dfcat.to_table().to_pandas()
 
-    # dfcat = pd.read_csv("/home/rafael/datasets/evalsets/evalset-multicat-v0.2-long2048/dfcat-for-training.csv")
-    # dfcat = dfcat.query('cat != "hanged-sod+prod"').reset_index(drop=True)
+    if flexai:
+        lancepath = os.path.join('/input/testcat.lance')
+        dfcat = lance.dataset(lancepath)
+        dfcat = dfcat.to_table().to_pandas()
+    else:
+        dfcat = pd.read_csv("/home/rafael/datasets/evalsets/evalset-multicat-v0.2-long2048/dfcat-for-training.csv")
+        dfcat = dfcat.query('cat != "hanged-sod+prod"').reset_index(drop=True)
 
     dfcat['sad'] = np.nan
 
@@ -105,8 +111,10 @@ def evaluate_evalset_by_cat(model, fl_fasttest=False, long=2048):
     ])
 
     for i, r in dfcat.iterrows():
-        im = bytes2im(r.image)
-        # im = cv2_imread(r.path)
+        if flexai:
+            im = bytes2im(r.image)
+        else:
+            im = cv2_imread(r.path)
         oldh, oldw = im.shape[:2]
 
         newim, (padh, padw) = resize_im(
@@ -120,8 +128,10 @@ def evaluate_evalset_by_cat(model, fl_fasttest=False, long=2048):
         pred = T.functional.resize(pred, (oldh, oldw), antialias=True)
         pred = pred[0, 0].cpu().numpy()
 
-        # gt = cv2_imread(get_gtpath(r.path)) / 255
-        gt = bytes2im(r['mask']) / 255
+        if flexai:
+            gt = cv2_imread(get_gtpath(r.path)) / 255
+        else:
+            gt = bytes2im(r['mask']) / 255
         sad = (pred - gt).__abs__().sum()
         pred = float_to_uint8(pred)
         dfcat.loc[i, 'sad'] = sad / 1000

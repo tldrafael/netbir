@@ -59,7 +59,8 @@ class Config():
         self.dec_blk = ['BasicDecBlk', 'ResBlk'][0]
 
         # TRAINING settings
-        self.batch_size = 6
+        self.batch_size = 15
+        # self.batch_size = 4 # 1024
         # self.batch_size = 1
         self.finetune_last_epochs = [
             0,
@@ -75,8 +76,8 @@ class Config():
         ][1]    # choose 0 to skip
         self.lr = (1e-4 if 'DIS5K' in self.task else 1e-5) * math.sqrt(self.batch_size / 4)     # DIS needs high lr to converge faster. Adapt the lr linearly
         # self.size = (1024, 1024) if self.task not in ['General-2K'] else (2560, 1440)   # wid, hei
-        self.size = (756, 756)
-        # self.size = (256, 256)
+        # self.size = (1024, 1024)
+        self.size = (512, 512)
         self.num_workers = max(4, self.batch_size)          # will be decrease to min(it, batch_size) at the initialization of the data_loader
 
         # Backbone settings
@@ -181,8 +182,8 @@ class Config():
         self.lambda_adv_d = 3. * (self.lambda_adv_g > 0)
 
         # PATH settings - inactive
-        # self.weights_root_dir = os.path.join(self.sys_home_dir, 'weights/cv')
-        self.weights_root_dir = '/input/'
+        self.weights_root_dir = os.path.join(self.sys_home_dir, 'weights/cv')
+        # self.weights_root_dir = '/input/'
         self.weights = {
             'pvt_v2_b2': os.path.join(self.weights_root_dir, 'pvt_v2_b2.pth'),
             'pvt_v2_b5': os.path.join(self.weights_root_dir, ['pvt_v2_b5.pth', 'pvt_v2_b5_22k.pth'][0]),

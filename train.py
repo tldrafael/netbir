@@ -1,3 +1,4 @@
+from copy import deepcopy
 import os
 import datetime
 import argparse
@@ -21,9 +22,9 @@ from append import evaluate_evalset_by_cat, evaluate_testglass, MyLanceDataset
 from tqdm import tqdm
 import torch.distributed as dist
 
+flexai = False
+flexai = True
 
-fl_fasttest = False
-fl_fasttest = True
 
 main_gpu = 0
 n_gpus = torch.cuda.device_count()
@@ -41,6 +42,7 @@ parser.add_argument('--ckpt_dir', default='ckpt/tmp', help='Temporary folder')
 parser.add_argument('--testsets', default='DIS-VD+DIS-TE1+DIS-TE2+DIS-TE3+DIS-TE4', type=str)
 parser.add_argument('--dist', default=False, type=lambda x: x == 'True')
 parser.add_argument('--use_accelerate', action='store_true', help='`accelerate launch --multi_gpu train.py --use_accelerate`. Use accelerate for training, good for FP16/BF16/...')
+parser.add_argument('--fasttest', default=False, type=lambda x: x == 'True')
 args = parser.parse_args()
 
 if args.use_accelerate:
@@ -65,7 +67,14 @@ else:
 
 epoch_st = 1
 # make dir for ckpt
-args.ckpt_dir = '/output/'
+if flexai:
+    args.ckpt_dir = '/output/'
+
+resume = False
+if os.path.exists(args.ckpt_dir):
+    resume = True
+
+
 os.makedirs(args.ckpt_dir, exist_ok=True)
 
 # Init log file
@@ -80,7 +89,7 @@ logger.info("datasets: load_all={}, compile={}.".format(config.load_all, config.
 logger.info("Other hyperparameters:")
 logger.info(args)
 logger.info(f'batch size: {config.batch_size}')
-print('batch size:', config.batch_size)
+logger.info(f'fasttest: {args.fasttest}')
 
 
 writer = SummaryWriter(log_dir=os.path.join(args.ckpt_dir, 'logs'))
@@ -111,6 +120,7 @@ def my_init_data_loaders(to_be_distributed):
         print(p)
 
     train_fpath = '/input/2024_1101_sodlist_curated_756px_nobadhaginghands+notransparency.lance'
+    logger.info("train_fpath: {}".format(train_fpath))
     train_ds = MyLanceDataset(train_fpath, long=config.size[0])
 
     train_loader = prepare_dataloader(
@@ -147,13 +157,16 @@ def init_models_optimizers(epochs, to_be_distributed):
 
     # args.resume = '/home/rafael/workspace/BiRefNet/BiRefNet-general-epoch_244.pth'
     # args.resume = '/home/rafael/workspace/BiRefNet/ckpt/my-sublist50k-UHR-tuneiouloss/last.pth'
-    # ep_resume = 43
-    if args.resume:
-        if os.path.isfile(args.resume):
-            logger.info("=> loading checkpoint '{}'".format(args.resume))
-            state_dict = torch.load(args.resume, map_location='cpu', weights_only=True)
+    if resume:
+        lastpath = os.path.join(args.ckpt_dir, 'last.pth')
+        if os.path.isfile(lastpath):
+            logger.info("=> loading checkpoint '{}'".format(lastpath))
+            states = torch.load(lastpath, map_location='cpu')
+            state_dict = states['model_state']
             state_dict = check_state_dict(state_dict)
             model.load_state_dict(state_dict)
+
+            ep_resume = states['steps_cur']
             global epoch_st
             # epoch_st = int(args.resume.rstrip('.pth').split('epoch_')[-1]) + 1
             epoch_st = ep_resume + 1
@@ -165,7 +178,7 @@ def init_models_optimizers(epochs, to_be_distributed):
             model = DDP(model, device_ids=[device])
         else:
             model = model.to(device)
-    if config.compile and not fl_fasttest:
+    if config.compile and not args.fasttest:
         model = torch.compile(model, mode=['default', 'reduce-overhead', 'max-autotune'][0])
     if config.precisionHigh:
         torch.set_float32_matmul_precision('high')
@@ -184,15 +197,28 @@ def init_models_optimizers(epochs, to_be_distributed):
     logger.info("Optimizer details:"); logger.info(optimizer)
     logger.info("Scheduler details:"); logger.info(lr_scheduler)
 
-    return model, optimizer, lr_scheduler
+    if resume:
+        optimizer.load_state_dict(states['optimizer_state'])
+        logger.info("Loaded optimizer checkpoint")
+        sadlog_best = states['sadlog_best']
+        logger.info("Loaded sadlog_best: {:.2f}".format(sadlog_best))
+        sad_glass = states['sad_glass']
+        logger.info("Loaded sad_glass: {:.2f}".format(sad_glass))
+    else:
+        sadlog_best = 9999
+        sad_glass = 9999
+
+    return model, optimizer, lr_scheduler, sadlog_best, sad_glass
 
 
 class Trainer:
     def __init__(
         self, data_loaders, model_opt_lrsch,
     ):
-        self.model, self.optimizer, self.lr_scheduler = model_opt_lrsch
+        self.model, self.optimizer, self.lr_scheduler, self.sadlog_best, self.sad_glass = model_opt_lrsch
+
         self.train_loader, self.test_loaders = data_loaders
+
         if args.use_accelerate:
             self.train_loader, self.model, self.optimizer = accelerator.prepare(self.train_loader, self.model, self.optimizer)
             for testset in self.test_loaders.keys():
@@ -209,9 +235,6 @@ class Trainer:
         if config.lambda_adv_g:
             self.optimizer_d, self.lr_scheduler_d, self.disc, self.adv_criterion = self._load_adv_components()
             self.disc_update_for_odd = 0
-
-        self.sadlog_best = 9999
-        self.sad_glass = 9999
 
     def _load_adv_components(self):
         # AIL
@@ -294,6 +317,20 @@ class Trainer:
             adv_loss_d.backward()
             self.optimizer_d.step()
 
+    def save_ckpt(self, path, epoch):
+        state = self.model.module.state_dict() if \
+                to_be_distributed or args.use_accelerate else \
+                self.model.state_dict()
+
+        torch.save({
+            'steps_cur': epoch,
+            'model_state': deepcopy(state),
+            'optimizer_state': deepcopy(self.optimizer.state_dict()),
+            'sadlog_best': self.sadlog_best,
+            'sad_glass': self.sad_glass,
+        }, path)
+        logger.info('Model saved at {}'.format(path))
+
     def train_epoch(self, epoch):
         global logger_loss_idx
         self.model.train()
@@ -328,7 +365,7 @@ class Trainer:
 
                 pbar_trainloader.set_description(info_loss)
 
-                if fl_fasttest:
+                if args.fasttest:
                     break
 
         info_loss = '@==Final== Epoch[{0}/{1}]  Training Loss: {loss.avg:.3f}  '.format(epoch, args.epochs, loss=self.loss_log)
@@ -336,28 +373,29 @@ class Trainer:
         if gpu_id == main_gpu:
             writer.add_scalars('raw_objective', {'train': self.loss_log.avg}, epoch)
 
-        self.model.eval()
-        sadlog = evaluate_evalset_by_cat(self.model, fl_fasttest=fl_fasttest, long=config.size[0])
-        logger.info('Epoch[{0}/{1}]  sadlog: {sadlog:.2f}'.format(epoch, args.epochs, sadlog=sadlog))
         if gpu_id == main_gpu:
+            self.model.eval()
+
+            sadlog = evaluate_evalset_by_cat(self.model, fl_fasttest=args.fasttest, long=config.size[0])
+            logger.info('Epoch[{0}/{1}]  sadlog: {sadlog:.2f}'.format(epoch, args.epochs, sadlog=sadlog))
             writer.add_scalars('sad-log', {'testcat': sadlog}, epoch)
 
-        sadglass = evaluate_testglass(self.model, fl_fasttest=fl_fasttest)
-        logger.info('Epoch[{0}/{1}]  sad-glass3: {sadglass:.2f}'.format(epoch, args.epochs, sadglass=sadglass))
-        if gpu_id == main_gpu:
+            sadglass = evaluate_testglass(self.model, fl_fasttest=args.fasttest)
+            logger.info('Epoch[{0}/{1}]  sad-glass3: {sadglass:.2f}'.format(epoch, args.epochs, sadglass=sadglass))
             writer.add_scalars('sad', {'test-glass-3': sadglass}, epoch)
 
-        if sadlog < self.sadlog_best:
-            state = self.model.module.state_dict() if to_be_distributed or args.use_accelerate else self.model.state_dict(),
-            modelpath = os.path.join(args.ckpt_dir, 'sadlog_best.pth'.format(epoch))
-            torch.save(state, modelpath)
-            logger.info('Model saved at {}'.format(modelpath))
+            if sadlog < self.sadlog_best:
+                modelpath = os.path.join(args.ckpt_dir, 'sadlog_best.pth'.format(epoch))
+                self.sadlog_best = sadlog
+                self.save_ckpt(modelpath, epoch)
 
-        if sadglass < self.sad_glass:
-            state = self.model.module.state_dict() if to_be_distributed or args.use_accelerate else self.model.state_dict(),
-            modelpath = os.path.join(args.ckpt_dir, 'sadglass_best.pth'.format(epoch))
-            torch.save(state, modelpath)
-            logger.info('Model saved at {}'.format(modelpath))
+            if sadglass < self.sad_glass:
+                modelpath = os.path.join(args.ckpt_dir, 'sadglass_best.pth'.format(epoch))
+                self.sad_glass = sadglass
+                self.save_ckpt(modelpath, epoch)
+
+            lastpath = os.path.join(args.ckpt_dir, 'last.pth')
+            self.save_ckpt(lastpath, epoch)
 
         self.model.train()
 
@@ -370,10 +408,14 @@ class Trainer:
 
 def main():
 
+    if flexai:
+        init_function = my_init_data_loaders
+    else:
+        init_function = init_data_loaders
+
     trainer = Trainer(
-        data_loaders=my_init_data_loaders(to_be_distributed),
-        # data_loaders=init_data_loaders(to_be_distributed),
-        model_opt_lrsch=init_models_optimizers(args.epochs, to_be_distributed)
+            data_loaders=init_function(to_be_distributed),
+            model_opt_lrsch=init_models_optimizers(args.epochs, to_be_distributed)
     )
 
     for epoch in range(epoch_st, args.epochs+1):
@@ -381,14 +423,14 @@ def main():
         # Save checkpoint
         # DDP
         # if epoch >= args.epochs - config.save_last and epoch % config.save_step == 0:
-        if True:
-            modelpath = os.path.join(args.ckpt_dir, 'last.pth'.format(epoch))
-            torch.save(
-                trainer.model.module.state_dict() if to_be_distributed or args.use_accelerate else trainer.model.state_dict(),
-                # os.path.join(args.ckpt_dir, 'epoch_{}.pth'.format(epoch))
-                modelpath
-            )
-            logger.info('Model saved at {}'.format(modelpath))
+        # if True:
+        #     modelpath = os.path.join(args.ckpt_dir, 'last.pth'.format(epoch))
+        #     torch.save(
+        #         trainer.model.module.state_dict() if to_be_distributed or args.use_accelerate else trainer.model.state_dict(),
+        #         # os.path.join(args.ckpt_dir, 'epoch_{}.pth'.format(epoch))
+        #         modelpath
+        #     )
+        #     logger.info('Model saved at {}'.format(modelpath))
 
     if to_be_distributed:
         destroy_process_group()

@@ -22,6 +22,12 @@ nproc_per_node=$(echo ${devices%%,} | grep -o "," | wc -l)
 to_be_distributed=`echo ${nproc_per_node} | awk '{if($e > 0) print "True"; else print "False";}'`
 # to_be_distributed="True"
 
+fasttest=$3
+if [ ${#fasttest} -eq 0 ]
+then
+    fasttest="False"
+fi
+
 echo Training started at $(date)
 if [ ${to_be_distributed} == "True" ]
 then
@@ -33,6 +39,7 @@ then
         --testsets ${testsets} \
         --dist ${to_be_distributed} \
         --resume xx/xx-epoch_244.pth \
+        --fasttest $fasttest
         # --use_accelerate
 else
     echo "Single-GPU mode received..."
@@ -40,7 +47,8 @@ else
     python train.py --ckpt_dir ckpt/${method} --epochs ${epochs} \
         --testsets ${testsets} \
         --dist ${to_be_distributed} \
-        --resume xx/xx-epoch_244.pth
+        --resume xx/xx-epoch_244.pth \
+        --fasttest $fasttest
 fi
 
 echo Training finished at $(date)
