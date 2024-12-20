@@ -28,6 +28,12 @@ then
     fasttest="False"
 fi
 
+flexai=$4
+if [ ${#fasttest} -eq 0 ]
+then
+    flexai="False"
+fi
+
 echo Training started at $(date)
 if [ ${to_be_distributed} == "True" ]
 then
@@ -39,7 +45,8 @@ then
         --testsets ${testsets} \
         --dist ${to_be_distributed} \
         --resume xx/xx-epoch_244.pth \
-        --fasttest $fasttest
+        --fasttest $fasttest \
+        --flexai $flexai
         # --use_accelerate
 else
     echo "Single-GPU mode received..."
@@ -48,7 +55,8 @@ else
         --testsets ${testsets} \
         --dist ${to_be_distributed} \
         --resume xx/xx-epoch_244.pth \
-        --fasttest $fasttest
+        --fasttest $fasttest \
+        --flexai $flexai
 fi
 
 echo Training finished at $(date)

@@ -22,8 +22,6 @@ from append import evaluate_evalset_by_cat, evaluate_testglass, MyLanceDataset
 from tqdm import tqdm
 import torch.distributed as dist
 
-flexai = False
-flexai = True
 
 
 main_gpu = 0
@@ -43,7 +41,9 @@ parser.add_argument('--testsets', default='DIS-VD+DIS-TE1+DIS-TE2+DIS-TE3+DIS-TE
 parser.add_argument('--dist', default=False, type=lambda x: x == 'True')
 parser.add_argument('--use_accelerate', action='store_true', help='`accelerate launch --multi_gpu train.py --use_accelerate`. Use accelerate for training, good for FP16/BF16/...')
 parser.add_argument('--fasttest', default=False, type=lambda x: x == 'True')
+parser.add_argument('--flexai', default=False, type=lambda x: x == 'True')
 args = parser.parse_args()
+
 
 if args.use_accelerate:
     from accelerate import Accelerator
@@ -67,7 +67,7 @@ else:
 
 epoch_st = 1
 # make dir for ckpt
-if flexai:
+if args.flexai:
     args.ckpt_dir = '/output/'
 
 resume = False
@@ -156,7 +156,7 @@ def init_models_optimizers(epochs, to_be_distributed):
         model = BiRefNetC2F(bb_pretrained=True and not os.path.isfile(str(args.resume)))
 
     # args.resume = '/home/rafael/workspace/BiRefNet/BiRefNet-general-epoch_244.pth'
-    # args.resume = '/home/rafael/workspace/BiRefNet/ckpt/my-sublist50k-UHR-tuneiouloss/last.pth'
+    # args.resume = '/home/rafael/workspace/BiRefNet/ckpt/y-curated-notransp/last.pth'
     if resume:
         lastpath = os.path.join(args.ckpt_dir, 'last.pth')
         if os.path.isfile(lastpath):
@@ -172,12 +172,14 @@ def init_models_optimizers(epochs, to_be_distributed):
             epoch_st = ep_resume + 1
         else:
             logger.info("=> no checkpoint found at '{}'".format(args.resume))
+
     if not args.use_accelerate:
         if to_be_distributed:
             model = model.to(device)
             model = DDP(model, device_ids=[device])
         else:
             model = model.to(device)
+
     if config.compile and not args.fasttest:
         model = torch.compile(model, mode=['default', 'reduce-overhead', 'max-autotune'][0])
     if config.precisionHigh:
@@ -408,7 +410,7 @@ class Trainer:
 
 def main():
 
-    if flexai:
+    if args.flexai:
         init_function = my_init_data_loaders
     else:
         init_function = init_data_loaders

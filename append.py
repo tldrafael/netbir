@@ -10,9 +10,6 @@ import lance
 import random
 import os
 
-flexai = False
-flexai = True
-
 
 def get_newshape(oldh, oldw, long_length=1024):
     scale = long_length * 1.0 / max(oldh, oldw)
@@ -89,7 +86,7 @@ def bytes2im(s):
 
 
 @torch.no_grad()
-def evaluate_evalset_by_cat(model, fl_fasttest=False, long=2048):
+def evaluate_evalset_by_cat(model, fl_fasttest=False, long=2048, flexai=False):
 
     if flexai:
         lancepath = os.path.join('/input/testcat.lance')
@@ -129,9 +126,9 @@ def evaluate_evalset_by_cat(model, fl_fasttest=False, long=2048):
         pred = pred[0, 0].cpu().numpy()
 
         if flexai:
-            gt = cv2_imread(get_gtpath(r.path)) / 255
-        else:
             gt = bytes2im(r['mask']) / 255
+        else:
+            gt = cv2_imread(get_gtpath(r.path)) / 255
         sad = (pred - gt).__abs__().sum()
         pred = float_to_uint8(pred)
         dfcat.loc[i, 'sad'] = sad / 1000

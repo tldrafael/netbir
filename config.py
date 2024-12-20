@@ -59,8 +59,8 @@ class Config():
         self.dec_blk = ['BasicDecBlk', 'ResBlk'][0]
 
         # TRAINING settings
-        self.batch_size = 15
-        # self.batch_size = 4 # 1024
+        self.batch_size = 15 # 512px
+        # self.batch_size = 4 # 1024px
         # self.batch_size = 1
         self.finetune_last_epochs = [
             0,
