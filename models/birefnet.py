@@ -34,9 +34,10 @@ class BiRefNet(
     repo_url="https://github.com/ZhengPeng7/BiRefNet",
     tags=['Image Segmentation', 'Background Removal', 'Mask Generation', 'Dichotomous Image Segmentation', 'Camouflaged Object Detection', 'Salient Object Detection']
 ):
-    def __init__(self, bb_pretrained=True):
+    def __init__(self, bb_pretrained=True, config=Config()):
         super(BiRefNet, self).__init__()
-        self.config = Config()
+        # self.config = Config()
+        self.config = config
         self.epoch = 1
         self.bb = build_backbone(self.config.bb, pretrained=bb_pretrained)
 
