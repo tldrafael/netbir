@@ -3,7 +3,7 @@ import math
 
 
 class Config():
-    def __init__(self) -> None:
+    def __init__(self, flexai=False, size=1024, batch_size=4) -> None:
         # PATH settings
         # Make up your file system as: SYS_HOME_DIR/codes/dis/BiRefNet, SYS_HOME_DIR/datasets/dis/xx, SYS_HOME_DIR/weights/xx
         self.sys_home_dir = [os.path.expanduser('~'), '/mnt/data'][0]   # Default, custom
@@ -59,9 +59,9 @@ class Config():
         self.dec_blk = ['BasicDecBlk', 'ResBlk'][0]
 
         # TRAINING settings
-        self.batch_size = 15 # 512px
+        # self.batch_size = 15 # 512px
         # self.batch_size = 4 # 1024px
-        # self.batch_size = 1
+        self.batch_size = batch_size
         self.finetune_last_epochs = [
             0,
             {
@@ -78,8 +78,7 @@ class Config():
         # self.lr = 1e-4
         self.lr = 1e-5
         # self.size = (1024, 1024) if self.task not in ['General-2K'] else (2560, 1440)   # wid, hei
-        self.size = 512*1
-        self.size = (int(self.size), int(self.size))
+        self.size = (int(size), int(size))
         self.num_workers = max(4, self.batch_size)          # will be decrease to min(it, batch_size) at the initialization of the data_loader
 
         # Backbone settings

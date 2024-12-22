@@ -32,6 +32,8 @@ parser.add_argument('--dist', default=False, type=lambda x: x == 'True')
 parser.add_argument('--use_accelerate', action='store_true', help='`accelerate launch --multi_gpu train.py --use_accelerate`. Use accelerate for training, good for FP16/BF16/...')
 parser.add_argument('--fasttest', default=False, type=lambda x: x == 'True')
 parser.add_argument('--flexai', default=False, type=lambda x: x == 'True')
+parser.add_argument('--batch_size', default=4, type=int)
+parser.add_argument('--size', default=1024, type=int)
 args = parser.parse_args()
 
 
@@ -44,7 +46,7 @@ if args.use_accelerate:
     args.dist = False
 
 
-config = Config()
+config = Config(flexai=args.flexai, batch_size=args.batch_size, size=args.size)
 if config.rand_seed:
     set_seed(config.rand_seed)
 
