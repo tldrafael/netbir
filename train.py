@@ -68,6 +68,7 @@ epoch_st = 1
 # make dir for ckpt
 if args.flexai:
     args.ckpt_dir = '/output/'
+    config.weights['swin_v1_l'] = '/input/swin_large_patch4_window12_384_22kto1k.pth'
 
 
 os.makedirs(args.ckpt_dir, exist_ok=True)
