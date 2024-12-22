@@ -50,6 +50,8 @@ config = Config(flexai=args.flexai, batch_size=args.batch_size, size=args.size)
 if config.rand_seed:
     set_seed(config.rand_seed)
 
+print(f"no. epochs: {args.epochs}")
+
 # DDP
 to_be_distributed = args.dist
 print(f"to_be_distributed: {to_be_distributed}")
