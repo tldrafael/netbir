@@ -124,7 +124,7 @@ def my_init_data_loaders(to_be_distributed):
     for p in pathlib.Path("/").rglob("*.lance"):
         print(p)
 
-    train_fpath = '/input/2024_1101_sodlist_curated_756px_nobadhaginghands+notransparency.lance'
+    train_fpath = '/input/2024_1101_sodlist_curated_512px_nobadhaginghands+notransparency.lance'
     logger.info("train_fpath: {}".format(train_fpath))
     train_ds = MyLanceDataset(train_fpath, long=config.size[0])
 
