@@ -96,6 +96,7 @@ logger.info("Resume: {}".format(resume))
 if args.use_accelerate and accelerator.mixed_precision != 'no':
     config.compile = False
 
+config.compile = False
 
 logger.info("datasets: load_all={}, compile={}.".format(config.load_all, config.compile))
 logger.info("Other hyperparameters:")
