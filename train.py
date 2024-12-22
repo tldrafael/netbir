@@ -26,14 +26,12 @@ import torch.distributed as dist
 
 main_gpu = 0
 n_gpus = torch.cuda.device_count()
-# rank = dist.get_rank()
-# gpu_id = rank % n_gpus
-gpu_id = torch.cuda.current_device()
-fl_main = gpu_id == main_gpu
+device = int(os.environ["LOCAL_RANK"])
+fl_main = device == main_gpu
+print(f"device: {device}, main_gpu: {main_gpu}, fl_main: {fl_main}")
 
 
 parser = argparse.ArgumentParser(description='')
-parser.add_argument('--resume', default=None, type=str, help='path to latest checkpoint')
 parser.add_argument('--epochs', default=120, type=int)
 parser.add_argument('--trainset', default='DIS5K', type=str, help="Options: 'DIS5K'")
 parser.add_argument('--ckpt_dir', default='ckpt/tmp', help='Temporary folder')
@@ -53,12 +51,14 @@ if args.use_accelerate:
     )
     args.dist = False
 
+
 config = Config()
 if config.rand_seed:
     set_seed(config.rand_seed)
 
 # DDP
 to_be_distributed = args.dist
+print(f"to_be_distributed: {to_be_distributed}")
 if to_be_distributed:
     init_process_group(backend="nccl", timeout=datetime.timedelta(seconds=3600*10))
     device = int(os.environ["LOCAL_RANK"])
@@ -70,34 +70,40 @@ epoch_st = 1
 if args.flexai:
     args.ckpt_dir = '/output/'
 
-resume = False
-if os.path.exists(args.ckpt_dir):
-    resume = True
-
 
 os.makedirs(args.ckpt_dir, exist_ok=True)
-
 # Init log file
 logger = Logger(os.path.join(args.ckpt_dir, "log.txt"), fl_main=fl_main)
+writer = SummaryWriter(log_dir=os.path.join(args.ckpt_dir, 'logs'))
 logger_loss_idx = 1
+
+
+lastpath = os.path.join(args.ckpt_dir, 'last.pth')
+resume = False
+if os.path.exists(lastpath):
+    resume = True
+logger.info("Resume: {}".format(resume))
+
 
 # log model and optimizer params
 # logger.info("Model details:"); logger.info(model)
 if args.use_accelerate and accelerator.mixed_precision != 'no':
     config.compile = False
+
+
 logger.info("datasets: load_all={}, compile={}.".format(config.load_all, config.compile))
 logger.info("Other hyperparameters:")
 logger.info(args)
 logger.info(f'batch size: {config.batch_size}')
 logger.info(f'fasttest: {args.fasttest}')
+logger.info(f'fasttest: {args.fasttest}')
 
-
-writer = SummaryWriter(log_dir=os.path.join(args.ckpt_dir, 'logs'))
 
 if os.path.exists(os.path.join(config.data_root_dir, config.task, args.testsets.strip('+').split('+')[0])):
     args.testsets = args.testsets.strip('+').split('+')
 else:
     args.testsets = []
+
 
 # Init model
 def prepare_dataloader(dataset: torch.utils.data.Dataset, batch_size: int, to_be_distributed=False, is_train=True):
@@ -151,27 +157,22 @@ def init_data_loaders(to_be_distributed):
 
 def init_models_optimizers(epochs, to_be_distributed):
     if config.model == 'BiRefNet':
-        model = BiRefNet(bb_pretrained=True and not os.path.isfile(str(args.resume)))
+        model = BiRefNet(bb_pretrained=True and not resume)
     elif config.model == 'BiRefNetC2F':
-        model = BiRefNetC2F(bb_pretrained=True and not os.path.isfile(str(args.resume)))
+        model = BiRefNetC2F(bb_pretrained=True and not resume)
 
     # args.resume = '/home/rafael/workspace/BiRefNet/BiRefNet-general-epoch_244.pth'
     # args.resume = '/home/rafael/workspace/BiRefNet/ckpt/y-curated-notransp/last.pth'
     if resume:
-        lastpath = os.path.join(args.ckpt_dir, 'last.pth')
-        if os.path.isfile(lastpath):
-            logger.info("=> loading checkpoint '{}'".format(lastpath))
-            states = torch.load(lastpath, map_location='cpu')
-            state_dict = states['model_state']
-            state_dict = check_state_dict(state_dict)
-            model.load_state_dict(state_dict)
+        logger.info("=> loading checkpoint '{}'".format(lastpath))
+        states = torch.load(lastpath, map_location='cpu')
+        state_dict = states['model_state']
+        state_dict = check_state_dict(state_dict)
+        model.load_state_dict(state_dict)
 
-            ep_resume = states['steps_cur']
-            global epoch_st
-            # epoch_st = int(args.resume.rstrip('.pth').split('epoch_')[-1]) + 1
-            epoch_st = ep_resume + 1
-        else:
-            logger.info("=> no checkpoint found at '{}'".format(args.resume))
+        ep_resume = states['steps_cur']
+        global epoch_st
+        epoch_st = ep_resume + 1
 
     if not args.use_accelerate:
         if to_be_distributed:
@@ -182,6 +183,7 @@ def init_models_optimizers(epochs, to_be_distributed):
 
     if config.compile and not args.fasttest:
         model = torch.compile(model, mode=['default', 'reduce-overhead', 'max-autotune'][0])
+
     if config.precisionHigh:
         torch.set_float32_matmul_precision('high')
 
@@ -201,6 +203,7 @@ def init_models_optimizers(epochs, to_be_distributed):
 
     if resume:
         optimizer.load_state_dict(states['optimizer_state'])
+        optimizer.param_groups[0]['lr'] = config.lr
         logger.info("Loaded optimizer checkpoint")
         sadlog_best = states['sadlog_best']
         logger.info("Loaded sadlog_best: {:.2f}".format(sadlog_best))
@@ -349,15 +352,14 @@ class Trainer:
                 self.pix_loss.lambdas_pix_last['iou'] *= 0.5
                 self.pix_loss.lambdas_pix_last['mae'] *= 0.9
 
-        gpu_id = torch.distributed.get_rank() if to_be_distributed else 0
         pbar_trainloader = tqdm(
-            self.train_loader, desc=f"ep {epoch}", disable=gpu_id != 0)
+            self.train_loader, desc=f"ep {epoch}", disable=device != 0)
 
         # for batch_idx, batch in enumerate(self.train_loader):
         for batch_idx, batch in enumerate(pbar_trainloader):
             self._train_batch(batch)
             # Logger
-            if batch_idx % 100 == 0:
+            if batch_idx % 30 == 0:
                 #info_progress = 'Epoch[{0}/{1}] Iter[{2}/{3}].'.format(epoch, args.epochs, batch_idx, len(self.train_loader))
                 #info_loss = 'Training Losses'
                 info_loss = ''
@@ -367,15 +369,15 @@ class Trainer:
 
                 pbar_trainloader.set_description(info_loss)
 
-                if args.fasttest:
+                if args.fasttest and batch_idx > 0:
                     break
 
         info_loss = '@==Final== Epoch[{0}/{1}]  Training Loss: {loss.avg:.3f}  '.format(epoch, args.epochs, loss=self.loss_log)
         logger.info(info_loss)
-        if gpu_id == main_gpu:
+        if device == main_gpu:
             writer.add_scalars('raw_objective', {'train': self.loss_log.avg}, epoch)
 
-        if gpu_id == main_gpu:
+        if device == main_gpu:
             self.model.eval()
 
             sadlog = evaluate_evalset_by_cat(self.model, fl_fasttest=args.fasttest, long=config.size[0])
@@ -396,7 +398,6 @@ class Trainer:
                 self.sad_glass = sadglass
                 self.save_ckpt(modelpath, epoch)
 
-            lastpath = os.path.join(args.ckpt_dir, 'last.pth')
             self.save_ckpt(lastpath, epoch)
 
         self.model.train()

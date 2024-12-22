@@ -12,5 +12,6 @@ einops
 tqdm
 prettytable
 
+pandas
 huggingface_hub
 lancedb

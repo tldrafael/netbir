@@ -18,6 +18,7 @@ testsets=NO     # Non-existing folder to skip.
 # Train
 devices=$2
 nproc_per_node=$(echo ${devices%%,} | grep -o "," | wc -l)
+echo "nproc_per_node: ${nproc_per_node}"
 
 to_be_distributed=`echo ${nproc_per_node} | awk '{if($e > 0) print "True"; else print "False";}'`
 # to_be_distributed="True"
@@ -35,16 +36,16 @@ then
 fi
 
 echo Training started at $(date)
+
 if [ ${to_be_distributed} == "True" ]
 then
     # Adapt the nproc_per_node by the number of GPUs. Give 8989 as the default value of master_port.
     echo "Multi-GPU mode received..."
     CUDA_VISIBLE_DEVICES=${devices} \
-    torchrun --nproc_per_node $((nproc_per_node+1)) --master_port=${3:-8999} \
+    torchrun --nproc_per_node $((nproc_per_node+1)) --master_port=8999 \
     train.py --ckpt_dir ckpt/${method} --epochs ${epochs} \
         --testsets ${testsets} \
         --dist ${to_be_distributed} \
-        --resume xx/xx-epoch_244.pth \
         --fasttest $fasttest \
         --flexai $flexai
         # --use_accelerate
