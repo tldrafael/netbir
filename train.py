@@ -68,11 +68,13 @@ print(f"device: {device}, main_gpu: {main_gpu}, fl_main: {fl_main}")
 
 epoch_st = 1
 # make dir for ckpt
+print('flexai:', args.flexai)
 if args.flexai:
     args.ckpt_dir = '/output/'
     config.weights['swin_v1_l'] = '/input/swin_large_patch4_window12_384_22kto1k.pth'
 
 
+print(f'\n\nweights dir: {config.weights["swin_v1_l"]}\n\n')
 os.makedirs(args.ckpt_dir, exist_ok=True)
 # Init log file
 logger = Logger(os.path.join(args.ckpt_dir, "log.txt"), fl_main=fl_main)
@@ -165,6 +167,7 @@ def init_models_optimizers(epochs, to_be_distributed):
 
     # args.resume = '/home/rafael/workspace/BiRefNet/BiRefNet-general-epoch_244.pth'
     # args.resume = '/home/rafael/workspace/BiRefNet/ckpt/y-curated-notransp/last.pth'
+    print(f'\n\nweights dir: {config.weights["swin_v1_l"]}\n\n')
     if resume:
         logger.info("=> loading checkpoint '{}'".format(lastpath))
         states = torch.load(lastpath, map_location='cpu')
