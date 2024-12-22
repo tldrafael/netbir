@@ -386,7 +386,10 @@ class Trainer:
         if device == main_gpu:
             self.model.eval()
 
-            sadlog = evaluate_evalset_by_cat(self.model, fl_fasttest=args.fasttest, long=config.size[0])
+            sadlog = evaluate_evalset_by_cat(
+                    self.model, fl_fasttest=args.fasttest, long=config.size[0],
+                    flexai=args.flexai
+                    )
             logger.info('Epoch[{0}/{1}]  sadlog: {sadlog:.2f}'.format(epoch, args.epochs, sadlog=sadlog))
             writer.add_scalars('sad-log', {'testcat': sadlog}, epoch)
 
