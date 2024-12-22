@@ -161,6 +161,7 @@ def init_data_loaders(to_be_distributed):
 
 def init_models_optimizers(epochs, to_be_distributed):
     if config.model == 'BiRefNet':
+        print(f'\n\nweights dir: {config.weights["swin_v1_l"]}\n\n')
         model = BiRefNet(bb_pretrained=True and not resume, config=config)
     elif config.model == 'BiRefNetC2F':
         model = BiRefNetC2F(bb_pretrained=True and not resume)

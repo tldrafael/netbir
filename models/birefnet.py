@@ -37,9 +37,10 @@ class BiRefNet(
     def __init__(self, bb_pretrained=True, config=Config()):
         super(BiRefNet, self).__init__()
         # self.config = Config()
+        print(f'\n\nweights dir: {config.weights["swin_v1_l"]}\n\n')
         self.config = config
         self.epoch = 1
-        self.bb = build_backbone(self.config.bb, pretrained=bb_pretrained)
+        self.bb = build_backbone(self.config.bb, pretrained=bb_pretrained, config=config)
 
         channels = self.config.lateral_channels_in_collection
 
