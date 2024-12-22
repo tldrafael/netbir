@@ -23,14 +23,6 @@ from tqdm import tqdm
 import torch.distributed as dist
 
 
-
-main_gpu = 0
-n_gpus = torch.cuda.device_count()
-device = int(os.environ["LOCAL_RANK"])
-fl_main = device == main_gpu
-print(f"device: {device}, main_gpu: {main_gpu}, fl_main: {fl_main}")
-
-
 parser = argparse.ArgumentParser(description='')
 parser.add_argument('--epochs', default=120, type=int)
 parser.add_argument('--trainset', default='DIS5K', type=str, help="Options: 'DIS5K'")
@@ -64,6 +56,13 @@ if to_be_distributed:
     device = int(os.environ["LOCAL_RANK"])
 else:
     device = config.device
+
+
+main_gpu = 0
+n_gpus = torch.cuda.device_count()
+fl_main = device == main_gpu
+print(f"device: {device}, main_gpu: {main_gpu}, fl_main: {fl_main}")
+
 
 epoch_st = 1
 # make dir for ckpt
