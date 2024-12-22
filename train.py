@@ -393,19 +393,19 @@ class Trainer:
             logger.info('Epoch[{0}/{1}]  sadlog: {sadlog:.2f}'.format(epoch, args.epochs, sadlog=sadlog))
             writer.add_scalars('sad-log', {'testcat': sadlog}, epoch)
 
-            sadglass = evaluate_testglass(self.model, fl_fasttest=args.fasttest)
-            logger.info('Epoch[{0}/{1}]  sad-glass3: {sadglass:.2f}'.format(epoch, args.epochs, sadglass=sadglass))
-            writer.add_scalars('sad', {'test-glass-3': sadglass}, epoch)
+            # sadglass = evaluate_testglass(self.model, fl_fasttest=args.fasttest)
+            # logger.info('Epoch[{0}/{1}]  sad-glass3: {sadglass:.2f}'.format(epoch, args.epochs, sadglass=sadglass))
+            # writer.add_scalars('sad', {'test-glass-3': sadglass}, epoch)
 
             if sadlog < self.sadlog_best:
                 modelpath = os.path.join(args.ckpt_dir, 'sadlog_best.pth'.format(epoch))
                 self.sadlog_best = sadlog
                 self.save_ckpt(modelpath, epoch)
 
-            if sadglass < self.sad_glass:
-                modelpath = os.path.join(args.ckpt_dir, 'sadglass_best.pth'.format(epoch))
-                self.sad_glass = sadglass
-                self.save_ckpt(modelpath, epoch)
+            #if sadglass < self.sad_glass:
+            #    modelpath = os.path.join(args.ckpt_dir, 'sadglass_best.pth'.format(epoch))
+            #    self.sad_glass = sadglass
+            #    self.save_ckpt(modelpath, epoch)
 
             self.save_ckpt(lastpath, epoch)
 
