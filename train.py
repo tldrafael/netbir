@@ -32,6 +32,7 @@ parser.add_argument('--dist', default=False, type=lambda x: x == 'True')
 parser.add_argument('--use_accelerate', action='store_true', help='`accelerate launch --multi_gpu train.py --use_accelerate`. Use accelerate for training, good for FP16/BF16/...')
 parser.add_argument('--fasttest', default=False, type=lambda x: x == 'True')
 parser.add_argument('--flexai', default=False, type=lambda x: x == 'True')
+parser.add_argument('--compile', default=False, type=lambda x: x == 'True')
 parser.add_argument('--batch_size', default=4, type=int)
 parser.add_argument('--size', default=1024, type=int)
 args = parser.parse_args()
@@ -46,7 +47,10 @@ if args.use_accelerate:
     args.dist = False
 
 
-config = Config(flexai=args.flexai, batch_size=args.batch_size, size=args.size)
+config = Config(
+        flexai=args.flexai, batch_size=args.batch_size, size=args.size,
+        compile=args.compile
+        )
 if config.rand_seed:
     set_seed(config.rand_seed)
 
@@ -80,6 +84,7 @@ print(f'\n\nweights dir: {config.weights["swin_v1_l"]}\n\n')
 os.makedirs(args.ckpt_dir, exist_ok=True)
 # Init log file
 logger = Logger(os.path.join(args.ckpt_dir, "log.txt"), fl_main=fl_main)
+logger.info("\n\nTraining started at: {}".format(datetime.datetime.now()))
 writer = SummaryWriter(log_dir=os.path.join(args.ckpt_dir, 'logs'))
 logger_loss_idx = 1
 
@@ -95,8 +100,8 @@ logger.info("Resume: {}".format(resume))
 # logger.info("Model details:"); logger.info(model)
 if args.use_accelerate and accelerator.mixed_precision != 'no':
     config.compile = False
+# config.compile = False
 
-config.compile = False
 
 logger.info("datasets: load_all={}, compile={}.".format(config.load_all, config.compile))
 logger.info("Other hyperparameters:")
@@ -163,6 +168,7 @@ def init_data_loaders(to_be_distributed):
 
 
 def init_models_optimizers(epochs, to_be_distributed):
+
     if config.model == 'BiRefNet':
         print(f'\n\nweights dir: {config.weights["swin_v1_l"]}\n\n')
         model = BiRefNet(bb_pretrained=True and not resume, config=config)
@@ -226,6 +232,7 @@ def init_models_optimizers(epochs, to_be_distributed):
 
 
 class Trainer:
+
     def __init__(
         self, data_loaders, model_opt_lrsch,
     ):
@@ -401,12 +408,12 @@ class Trainer:
             # writer.add_scalars('sad', {'test-glass-3': sadglass}, epoch)
 
             if sadlog < self.sadlog_best:
-                modelpath = os.path.join(args.ckpt_dir, 'sadlog_best.pth'.format(epoch))
+                modelpath = os.path.join(args.ckpt_dir, 'sadlog_best.pth')
                 self.sadlog_best = sadlog
                 self.save_ckpt(modelpath, epoch)
 
             #if sadglass < self.sad_glass:
-            #    modelpath = os.path.join(args.ckpt_dir, 'sadglass_best.pth'.format(epoch))
+            #    modelpath = os.path.join(args.ckpt_dir, 'sadglass_best.pth')
             #    self.sad_glass = sadglass
             #    self.save_ckpt(modelpath, epoch)
 
