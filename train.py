@@ -132,10 +132,10 @@ def prepare_dataloader(dataset: torch.utils.data.Dataset, batch_size: int, to_be
 
 
 def my_init_data_loaders(to_be_distributed):
-    print('\n\n\n')
-    import pathlib
-    for p in pathlib.Path("/").rglob("*.lance"):
-        print(p)
+    #print('\n\n\n')
+    #import pathlib
+    #for p in pathlib.Path("/").rglob("*.lance"):
+    #    print(p)
 
     train_fpath = '/input/2024_1101_sodlist_curated_512px_nobadhaginghands+notransparency.lance'
     logger.info("train_fpath: {}".format(train_fpath))
